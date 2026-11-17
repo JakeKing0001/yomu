@@ -15,7 +15,14 @@ struct UpdatesView: View {
         let limit = Calendar.current.date(byAdding: .month, value: -3, to: Date()) ?? .distantPast
         let list = newChapters
             .filter { $0.manga?.inLibrary == true && $0.dateFetched > limit && (!unreadOnly || !$0.read) }
-            .sorted { $0.dateFetched > $1.dateFetched }
+            .sorted { a, b in
+                // Più recenti prima; a parità di data (stesso aggiornamento) si raggruppa per manga
+                // e si mostra prima il capitolo più nuovo, come in Mihon.
+                if a.dateFetched != b.dateFetched { return a.dateFetched > b.dateFetched }
+                let ta = a.manga?.title ?? "", tb = b.manga?.title ?? ""
+                if ta != tb { return ta.localizedCaseInsensitiveCompare(tb) == .orderedAscending }
+                return a.sourceOrder < b.sourceOrder
+            }
         let grouped = Dictionary(grouping: list) { Calendar.current.startOfDay(for: $0.dateFetched) }
         return grouped.keys.sorted(by: >).map { ($0, grouped[$0] ?? []) }
     }

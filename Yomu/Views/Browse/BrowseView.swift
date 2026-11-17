@@ -42,6 +42,7 @@ struct BrowseView: View {
 
 struct SourcesList: View {
     @EnvironmentObject private var extensions: ExtensionStore
+    @State private var target: SourceTarget?
 
     var body: some View {
         let sources = extensions.installedSources
@@ -60,45 +61,59 @@ struct SourcesList: View {
                 .padding(.vertical)
             }
             if let lastId = extensions.lastUsedSource, let last = sources.first(where: { $0.id == lastId }) {
-                Section("Ultimo usato") { SourceRow(source: last) }
+                Section("Ultimo usato") { SourceRow(source: last) { target = $0 } }
             }
             let pinned = sources.filter { extensions.pinnedSources.contains($0.id) }
             if !pinned.isEmpty {
-                Section("Fissate") { ForEach(pinned) { SourceRow(source: $0) } }
+                Section("Fissate") { ForEach(pinned) { s in SourceRow(source: s) { target = $0 } } }
             }
             let byLang = Dictionary(grouping: sources, by: \.lang)
             ForEach(byLang.keys.sorted { ExtensionStore.languageName($0) < ExtensionStore.languageName($1) }, id: \.self) { lang in
                 Section(ExtensionStore.languageName(lang)) {
-                    ForEach(byLang[lang] ?? []) { SourceRow(source: $0) }
+                    ForEach(byLang[lang] ?? []) { s in SourceRow(source: s) { target = $0 } }
                 }
             }
         }
         .listStyle(.plain)
+        .navigationDestination(item: $target) { SourceBrowseView(sourceId: $0.sourceId, mode: $0.mode) }
     }
 }
 
+struct SourceTarget: Hashable, Identifiable {
+    let sourceId: String
+    let mode: BrowseMode
+    var id: String { "\(sourceId)-\(mode.rawValue)" }
+}
+
+/// Riga in stile Mihon: tocco sulla fonte = Popolari, "Ultimi" = ultimi aggiornamenti, puntina = fissa.
+/// Si usano pulsanti (non NavigationLink) per evitare le frecce di sistema nella lista.
 struct SourceRow: View {
     let source: SourceInfo
+    var open: (SourceTarget) -> Void
     @EnvironmentObject private var extensions: ExtensionStore
 
     var body: some View {
         HStack(spacing: 14) {
-            NavigationLink {
-                SourceBrowseView(sourceId: source.id, mode: .popular)
+            Button {
+                open(SourceTarget(sourceId: source.id, mode: .popular))
             } label: {
                 HStack(spacing: 14) {
                     ExtensionIcon(url: extensions.extensionFor(sourceId: source.id)?.iconURL)
                     VStack(alignment: .leading) {
-                        Text(source.name)
+                        Text(source.name).foregroundStyle(.primary)
                         Text(ExtensionStore.languageName(source.lang)).font(.caption).foregroundStyle(.secondary)
                     }
+                    Spacer(minLength: 0)
                 }
+                .contentShape(Rectangle())
             }
-            NavigationLink {
-                SourceBrowseView(sourceId: source.id, mode: .latest)
+            .buttonStyle(.plain)
+            Button {
+                open(SourceTarget(sourceId: source.id, mode: .latest))
             } label: {
                 Text("Ultimi").font(.subheadline.bold()).foregroundStyle(Color.accentColor)
             }
+            .buttonStyle(.borderless)
             .fixedSize()
             Button {
                 extensions.togglePin(source.id)
