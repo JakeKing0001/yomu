@@ -3,7 +3,7 @@ import SwiftData
 
 struct BrowseView: View {
     @EnvironmentObject private var extensions: ExtensionStore
-    @State private var tab = 0
+    @State private var tab = Demo.int("demoBrowseTab")
     @State private var showGlobalSearch = false
     @State private var showFilter = false
 

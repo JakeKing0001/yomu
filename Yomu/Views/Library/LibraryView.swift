@@ -36,6 +36,8 @@ struct LibraryView: View {
     @State private var search = ""
     @State private var showOptions = false
     @State private var editing: MangaEntity?
+    @State private var demoManga: MangaEntity?
+    @State private var demoReader: ReaderTarget?
 
     private struct Tab: Identifiable, Hashable { let id: String; let name: String }
 
@@ -134,6 +136,22 @@ struct LibraryView: View {
             }
             .onChange(of: tabs.count) { _, count in
                 if selected >= count { selected = max(0, count - 1) }
+            }
+            .navigationDestination(item: $demoManga) { MangaDetailView(entity: $0) }
+            .fullScreenCover(item: $demoReader) { ReaderView(mangaKey: $0.mangaKey, chapterKey: $0.chapterKey) }
+            .task {
+                guard !Demo.screen.isEmpty else { return }
+                try? await Task.sleep(nanoseconds: 500_000_000)
+                let candidate = mangas
+                    .filter { !$0.chapters.isEmpty }
+                    .sorted { $0.chapters.filter(\.read).count > $1.chapters.filter(\.read).count }
+                    .first
+                guard let manga = candidate else { return }
+                if Demo.screen == "detail" {
+                    demoManga = manga
+                } else if Demo.screen == "reader", let chapter = manga.nextChapterToRead ?? manga.sortedChapters.last {
+                    demoReader = ReaderTarget(mangaKey: manga.key, chapterKey: chapter.key)
+                }
             }
         }
     }

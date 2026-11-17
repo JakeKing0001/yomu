@@ -1,0 +1,81 @@
+name: Screenshots
+
+on:
+  workflow_dispatch:
+
+jobs:
+  screenshots:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Select Xcode
+        run: sudo xcode-select -s /Applications/Xcode_16.4.app || sudo xcode-select -s "$(ls -d /Applications/Xcode_16*.app | sort -V | tail -1)"
+
+      - name: Build for simulator
+        run: |
+          brew install xcodegen
+          xcodegen generate
+          set -o pipefail
+          xcodebuild -project Yomu.xcodeproj -scheme Yomu -configuration Debug \
+            -sdk iphonesimulator -destination 'generic/platform=iOS Simulator' \
+            -derivedDataPath build CODE_SIGNING_ALLOWED=NO build | tail -5
+
+      - name: Take screenshots
+        run: |
+          APP=build/Build/Products/Debug-iphonesimulator/Yomu.app
+          BUNDLE=app.yomu.reader
+          mkdir -p shots
+
+          shoot() {
+            local dev="$1" prefix="$2"
+            xcrun simctl boot "$dev" || true
+            xcrun simctl bootstatus "$dev" -b
+            xcrun simctl ui "$dev" appearance dark
+            xcrun simctl status_bar "$dev" override --time "9:41" --batteryState charged --batteryLevel 100 --cellularBars 4 --wifiBars 3 || true
+            xcrun simctl install "$dev" "$APP"
+
+            echo "== Caricamento dati demo ($prefix)"
+            xcrun simctl launch --console-pty "$dev" "$BUNDLE" -demoSeed YES > "shots/$prefix-seed.log" 2>&1 &
+            for i in $(seq 1 90); do
+              sleep 2
+              if grep -q "libreria pronta" "shots/$prefix-seed.log"; then break; fi
+            done
+            cat "shots/$prefix-seed.log" | grep "\[demo\]" || true
+            xcrun simctl terminate "$dev" "$BUNDLE" || true
+            sleep 2
+
+            snap() {
+              local name="$1" wait="$2"; shift 2
+              xcrun simctl launch "$dev" "$BUNDLE" "$@" > /dev/null
+              sleep "$wait"
+              xcrun simctl io "$dev" screenshot "shots/$prefix-$name.png"
+              xcrun simctl terminate "$dev" "$BUNDLE" || true
+              sleep 1
+            }
+
+            snap 01-libreria 12 -demoTab 0
+            snap 02-dettaglio 14 -demoTab 0 -demoScreen detail
+            snap 03-lettore 20 -demoTab 0 -demoScreen reader
+            snap 04-novita 8 -demoTab 1
+            snap 05-cronologia 8 -demoTab 2
+            snap 06-fonti 8 -demoTab 3 -demoBrowseTab 0
+            snap 07-estensioni 12 -demoTab 3 -demoBrowseTab 1
+            snap 08-altro 6 -demoTab 4
+            snap 09-impostazioni 6 -demoTab 4 -demoScreen settings
+            xcrun simctl shutdown "$dev" || true
+          }
+
+          RUNTIME=$(xcrun simctl list runtimes ios -j | python3 -c "import json,sys; r=[x for x in json.load(sys.stdin)['runtimes'] if x['isAvailable']]; print(r[-1]['identifier'])")
+          echo "Runtime: $RUNTIME"
+          IPHONE=$(xcrun simctl create shot-iphone "iPhone 16 Pro" "$RUNTIME")
+          shoot "$IPHONE" iphone
+          IPAD=$(xcrun simctl create shot-ipad "iPad Pro 13-inch (M4)" "$RUNTIME" || xcrun simctl create shot-ipad "iPad Air 13-inch (M2)" "$RUNTIME")
+          shoot "$IPAD" ipad
+          ls -la shots
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: screenshots
+          path: shots

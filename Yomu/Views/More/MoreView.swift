@@ -49,8 +49,11 @@ struct MoreView: View {
             }
             .navigationTitle("Altro")
             .navigationBarTitleDisplayMode(.inline)
+            .navigationDestination(isPresented: $showDemoSettings) { SettingsView() }
         }
     }
+
+    @State private var showDemoSettings = Demo.screen == "settings"
 }
 
 struct SettingLabel: View {

@@ -134,7 +134,8 @@ struct RootView: View {
     @AppStorage(Prefs.secureScreen) private var secureScreen = false
     @Environment(\.scenePhase) private var scenePhase
     @State private var locked = false
-    @State private var tab = 0
+    @State private var tab = Demo.int("demoTab")
+    @Environment(\.modelContext) private var context
 
     var body: some View {
         ZStack {
@@ -167,7 +168,15 @@ struct RootView: View {
         .preferredColorScheme(theme == 1 ? .light : theme == 2 ? .dark : nil)
         .onAppear {
             if appLock { locked = true }
-            Task { await extensions.refresh() }
+            Task {
+                #if DEBUG
+                if Demo.shouldSeed {
+                    await DemoSeeder.run(context: context, extensions: extensions)
+                    return
+                }
+                #endif
+                await extensions.refresh()
+            }
         }
         .onChange(of: scenePhase) { _, phase in
             if phase == .background && appLock { locked = true }
