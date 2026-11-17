@@ -8,6 +8,7 @@ struct UpdatesView: View {
     @EnvironmentObject private var extensions: ExtensionStore
     @Query(filter: #Predicate<ChapterEntity> { $0.isNew == true }) private var newChapters: [ChapterEntity]
     @State private var reader: ReaderTarget?
+    @State private var detailManga: MangaEntity?
     @State private var unreadOnly = false
     @State private var showErrors = false
 
@@ -46,7 +47,7 @@ struct UpdatesView: View {
                         ForEach(chapters) { chapter in
                             if let manga = chapter.manga {
                                 HStack(spacing: 12) {
-                                    NavigationLink { MangaDetailView(entity: manga) } label: {
+                                    Button { detailManga = manga } label: {
                                         CoverImage(url: manga.thumbnailURL, headers: extensions.source(id: manga.sourceId)?.coverHeaders ?? [:])
                                             .frame(width: 48)
                                     }
@@ -112,6 +113,7 @@ struct UpdatesView: View {
                 }
             }
             .fullScreenCover(item: $reader) { ReaderView(mangaKey: $0.mangaKey, chapterKey: $0.chapterKey) }
+            .navigationDestination(item: $detailManga) { MangaDetailView(entity: $0) }
             .alert("Errori", isPresented: $showErrors) {
                 Button("OK", role: .cancel) {}
             } message: {
@@ -127,6 +129,7 @@ struct HistoryView: View {
     @Query(filter: #Predicate<ChapterEntity> { $0.lastReadAt != nil }) private var readChapters: [ChapterEntity]
     @State private var search = ""
     @State private var reader: ReaderTarget?
+    @State private var detailManga: MangaEntity?
     @State private var confirmClear = false
 
     /// Come Mihon: una voce per manga, con l'ultimo capitolo letto.
@@ -152,7 +155,7 @@ struct HistoryView: View {
                         ForEach(chapters) { chapter in
                             if let manga = chapter.manga {
                                 HStack(spacing: 14) {
-                                    NavigationLink { MangaDetailView(entity: manga) } label: {
+                                    Button { detailManga = manga } label: {
                                         CoverImage(url: manga.thumbnailURL, headers: extensions.source(id: manga.sourceId)?.coverHeaders ?? [:])
                                             .frame(width: 56)
                                     }
@@ -204,6 +207,7 @@ struct HistoryView: View {
                 }
             }
             .fullScreenCover(item: $reader) { ReaderView(mangaKey: $0.mangaKey, chapterKey: $0.chapterKey) }
+            .navigationDestination(item: $detailManga) { MangaDetailView(entity: $0) }
         }
     }
 }
