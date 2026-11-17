@@ -39,7 +39,7 @@ extension Element {
     static func bestFromSrcSet(_ srcset: String) -> String? {
         var best: (String, Double)?
         for candidate in srcset.split(separator: ",") {
-            let parts = candidate.trimmed.split(whereSeparator: { $0 == " " || $0 == "\n" })
+            let parts = String(candidate).trimmed.split(whereSeparator: { $0 == " " || $0 == "\n" })
             guard let url = parts.first.map(String.init), !url.isEmpty else { continue }
             var weight = 0.0
             if parts.count > 1 {

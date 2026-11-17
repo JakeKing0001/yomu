@@ -56,8 +56,51 @@ jobs:
           name: Yomu-ipa
           path: Yomu.ipa
 
+      - name: AltStore / SideStore source
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          REPO: ${{ github.repository }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          SIZE=$(stat -f%z Yomu.ipa)
+          VERSION="${TAG#v}"
+          DATE=$(date -u +%Y-%m-%d)
+          cat > altstore-source.json <<EOF
+          {
+            "name": "Yomu",
+            "identifier": "app.yomu.source",
+            "subtitle": "Lettore di manga ispirato a Mihon",
+            "iconURL": "https://raw.githubusercontent.com/${REPO}/main/Yomu/Assets.xcassets/AppIcon.appiconset/icon-1024.png",
+            "website": "https://github.com/${REPO}",
+            "apps": [
+              {
+                "name": "Yomu",
+                "bundleIdentifier": "app.yomu.reader",
+                "developerName": "${REPO%%/*}",
+                "subtitle": "Lettore di manga ispirato a Mihon",
+                "localizedDescription": "Libreria, novità, cronologia, estensioni dai repository Mihon e lettore paginato o webtoon.",
+                "iconURL": "https://raw.githubusercontent.com/${REPO}/main/Yomu/Assets.xcassets/AppIcon.appiconset/icon-1024.png",
+                "tintColor": "8CB5FF",
+                "versions": [
+                  {
+                    "version": "${VERSION}",
+                    "date": "${DATE}",
+                    "downloadURL": "https://github.com/${REPO}/releases/download/${TAG}/Yomu.ipa",
+                    "size": ${SIZE},
+                    "minOSVersion": "17.0"
+                  }
+                ]
+              }
+            ],
+            "news": []
+          }
+          EOF
+          python3 -m json.tool altstore-source.json > /dev/null
+
       - name: Release
         if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v2
         with:
-          files: Yomu.ipa
+          files: |
+            Yomu.ipa
+            altstore-source.json
