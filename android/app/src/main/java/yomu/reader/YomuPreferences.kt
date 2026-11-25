@@ -82,6 +82,9 @@ class YomuPreferences(preferenceStore: PreferenceStore) {
 
     val autoUpdate: Preference<Boolean> = preferenceStore.getBoolean("yomu_auto_update", true)
 
+    /** The reader's own Google AI Studio key, kept out of backups. Empty uses the free model. */
+    val geminiKey: Preference<String> = preferenceStore.getString(Preference.privateKey("yomu_gemini_key"), "")
+
     /** Android asked to confirm an update while Yomu was in the background. */
     val updateNeedsConfirm: Preference<Boolean> = preferenceStore.getBoolean("yomu_update_needs_confirm", false)
 

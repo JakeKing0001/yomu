@@ -64,9 +64,9 @@ class RecapClientTest {
 
     private fun build(url: String, cache: RecapCache = RecapCache(), onProgress: (RecapProgress) -> Unit = {}) =
         runBlocking {
-            RecapClient(mockk(), mockk()).build(
+            RecapClient(mockk(), mockk(), mockk()).build(
                 OkHttpClient(),
-                url,
+                ModelEndpoint(url, "test"),
                 listOf(MemoryChapter(1.0, listOf(page))),
                 cache,
                 onProgress,
@@ -147,9 +147,9 @@ class RecapClientTest {
     fun `a page with only sound effects has nothing to summarize`() {
         val error = assertThrows(RecapClient.RecapException::class.java) {
             runBlocking {
-                RecapClient(mockk(), mockk()).build(
+                RecapClient(mockk(), mockk(), mockk()).build(
                     OkHttpClient(),
-                    "http://127.0.0.1:1",
+                    ModelEndpoint("http://127.0.0.1:1", "test"),
                     listOf(MemoryChapter(1.0, listOf("BOOOM / !! / ZZZ"))),
                     RecapCache(),
                 ) {}

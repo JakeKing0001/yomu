@@ -60,8 +60,12 @@ sealed interface RecapProgress {
     data class Waiting(val seconds: Int) : RecapProgress
 }
 
+/** Where requests go: the free model, or Gemini with the reader's own key. */
+internal data class ModelEndpoint(val url: String, val model: String, val key: String? = null)
+
 /**
- * Writes recaps with GPT-OSS, an open-weight model that Pollinations hosts for free and without an API key.
+ * Writes recaps with GPT-OSS, an open-weight model that Pollinations hosts for free and without an API key, or
+ * with Gemini when the reader gave a key of their own.
  *
  * A small model invents freely on noisy OCR, so it first picks real lines, then writes only from those, and
  * every sentence it writes is checked against them.
@@ -71,11 +75,30 @@ sealed interface RecapProgress {
 class RecapClient(
     private val network: NetworkHelper,
     private val memory: ReadingMemory,
+    private val preferences: YomuPreferences,
 ) {
 
     class RecapException(val reason: StringResource) : Exception()
 
     private val json = Json { ignoreUnknownKeys = true }
+
+    /** Gemini knows far more series than the free model, so its answers can be trusted on their own. */
+    val usesGemini: Boolean get() = preferences.geminiKey.get().isNotBlank()
+
+    /** Whether Google accepts [key]; null when it couldn't be reached. */
+    suspend fun checkGeminiKey(key: String): Boolean? = withContext(Dispatchers.IO) {
+        try {
+            val request = Request.Builder().url(GEMINI_MODELS).header("x-goog-api-key", key.trim()).build()
+            network.client.newCall(request).await().use { it.isSuccessful }
+        } catch (_: IOException) {
+            null
+        }
+    }
+
+    private fun endpoint(): ModelEndpoint {
+        val key = preferences.geminiKey.get().trim()
+        return if (key.isEmpty()) FREE else ModelEndpoint(GEMINI_URL, GEMINI_MODEL, key)
+    }
 
     suspend fun recap(
         mangaId: Long,
@@ -89,7 +112,7 @@ class RecapClient(
         val cache = memory.readRecapCache(mangaId)
             ?.let { saved -> runCatching { json.decodeFromString<RecapCache>(saved) }.getOrNull() }
             ?: RecapCache()
-        val (recap, updated) = build(client, ENDPOINT, chapters, cache, onProgress)
+        val (recap, updated) = build(client, endpoint(), chapters, cache, onProgress)
         memory.writeRecapCache(mangaId, json.encodeToString(updated))
         recap
     }
@@ -100,7 +123,7 @@ class RecapClient(
             .readTimeout(TIMEOUT_SECONDS, TimeUnit.SECONDS)
             .callTimeout(TIMEOUT_SECONDS, TimeUnit.SECONDS)
             .build()
-        chat(client, ENDPOINT, system, user) {}
+        chat(client, endpoint(), system, user) {}
     }
 
     /** Null when the pages read so far don't contain the answer. */
@@ -113,12 +136,12 @@ class RecapClient(
             .readTimeout(TIMEOUT_SECONDS, TimeUnit.SECONDS)
             .callTimeout(TIMEOUT_SECONDS, TimeUnit.SECONDS)
             .build()
-        answer(client, ENDPOINT, chapters, question, onProgress)
+        answer(client, endpoint(), chapters, question, onProgress)
     }
 
     internal suspend fun answer(
         client: OkHttpClient,
-        url: String,
+        endpoint: ModelEndpoint,
         chapters: List<MemoryChapter>,
         question: String,
         onProgress: (RecapProgress) -> Unit,
@@ -129,12 +152,12 @@ class RecapClient(
             append("DOMANDA: ").append(question).append("\n\nRIGHE:\n")
             lines.forEachIndexed { index, line -> append(index + 1).append(". ").append(line.text).append('\n') }
         }
-        return MangaAsk.parse(chat(client, url, ASK_PROMPT, material, onProgress), lines)
+        return MangaAsk.parse(chat(client, endpoint, ASK_PROMPT, material, onProgress), lines)
     }
 
     internal suspend fun build(
         client: OkHttpClient,
-        url: String,
+        endpoint: ModelEndpoint,
         chapters: List<MemoryChapter>,
         cache: RecapCache,
         onProgress: (RecapProgress) -> Unit,
@@ -155,7 +178,7 @@ class RecapClient(
             val hash = lines.hashCode()
             val picked = picks[id]?.takeIf { it.hash == hash }?.lines ?: run {
                 onProgress(RecapProgress.Picking(index + 1, source.size))
-                val answer = chat(client, url, PICK_PROMPT, numbered(lines), onProgress)
+                val answer = chat(client, endpoint, PICK_PROMPT, numbered(lines), onProgress)
                 RecapText.pickedLines(answer, lines, MAX_PICKED_LINES).also { picks[id] = CachedPick(hash, it) }
             }
             number to picked
@@ -167,7 +190,7 @@ class RecapClient(
             "CAPITOLO ${RecapText.chapterLabel(number)}:\n" + lines.joinToString("\n") { "- $it" }
         }
         val answer = try {
-            chat(client, url, WRITE_PROMPT, material, onProgress)
+            chat(client, endpoint, WRITE_PROMPT, material, onProgress)
         } catch (e: RecapException) {
             logcat(LogPriority.WARN, e) { "Recap writing failed, showing the key lines only" }
             return Recap(emptyList(), emptyList(), lastLines, 0) to cache.copy(picks = picks)
@@ -179,7 +202,7 @@ class RecapClient(
         if (checked.first.sumOf { it.sentences.size } < evidence.size * MIN_SENTENCES_PER_CHAPTER) {
             onProgress(RecapProgress.Writing)
             // The wording differs so the service doesn't answer from its own cache.
-            val retry = runCatching { chat(client, url, WRITE_PROMPT, "$material\n\n$RETRY_HINT", onProgress) }
+            val retry = runCatching { chat(client, endpoint, WRITE_PROMPT, "$material\n\n$RETRY_HINT", onProgress) }
                 .onFailure { if (it is CancellationException) throw it }
                 .getOrNull()
             onProgress(RecapProgress.Checking)
@@ -191,7 +214,7 @@ class RecapClient(
                 chosenAnswer = retry
             }
         }
-        val (written, doubted) = judge(client, url, checked.first, evidence, onProgress)
+        val (written, doubted) = judge(client, endpoint, checked.first, evidence, onProgress)
         val names = RecapText.parseCharacters(chosenAnswer, evidence.flatMap { it.second })
             .ifEmpty { RecapText.characters(written.flatMap(RecapChapter::sentences)) }
         val recap = Recap(written, names, lastLines, checked.second + doubted)
@@ -201,7 +224,7 @@ class RecapClient(
     /** Word checks can't spot a sentence that is grammatical nonsense, so the model reviews its own draft. */
     private suspend fun judge(
         client: OkHttpClient,
-        url: String,
+        endpoint: ModelEndpoint,
         chapters: List<RecapChapter>,
         evidence: List<Pair<Double, List<String>>>,
         onProgress: (RecapProgress) -> Unit,
@@ -215,7 +238,7 @@ class RecapClient(
             sentences.forEachIndexed { index, sentence -> append(index + 1).append(". ").append(sentence).append('\n') }
         }
         val answer = try {
-            chat(client, url, JUDGE_PROMPT, material, onProgress)
+            chat(client, endpoint, JUDGE_PROMPT, material, onProgress)
         } catch (e: RecapException) {
             logcat(LogPriority.WARN, e) { "Recap review failed, keeping the checked sentences" }
             return chapters to 0
@@ -255,13 +278,13 @@ class RecapClient(
 
     private suspend fun chat(
         client: OkHttpClient,
-        url: String,
+        endpoint: ModelEndpoint,
         system: String,
         user: String,
         onProgress: (RecapProgress) -> Unit,
     ): String {
         val body = buildJsonObject {
-            put("model", MODEL)
+            put("model", endpoint.model)
             putJsonArray("messages") {
                 addJsonObject {
                     put("role", "system")
@@ -276,8 +299,9 @@ class RecapClient(
 
         repeat(MAX_ATTEMPTS) { attempt ->
             val request = Request.Builder()
-                .url(url)
+                .url(endpoint.url)
                 .post(body.toRequestBody("application/json".toMediaType()))
+                .apply { endpoint.key?.let { header("Authorization", "Bearer $it") } }
                 .build()
             var waitSeconds = 0
             val text = try {
@@ -287,6 +311,10 @@ class RecapClient(
                             waitSeconds = (response.header("retry-after")?.toIntOrNull() ?: ((attempt + 1) * 10))
                                 .coerceIn(1, MAX_WAIT_SECONDS)
                             null
+                        }
+                        endpoint.key != null && response.code in KEY_REFUSED_CODES -> {
+                            logcat(LogPriority.ERROR) { "Gemini refused the request with status ${response.code}" }
+                            throw RecapException(MR.strings.yomu_ai_key_refused)
                         }
                         !response.isSuccessful -> {
                             logcat(LogPriority.ERROR) { "Recap request failed with status ${response.code}" }
@@ -324,8 +352,13 @@ class RecapClient(
     }
 
     private companion object {
-        const val ENDPOINT = "https://text.pollinations.ai/openai"
-        const val MODEL = "openai-fast"
+        val FREE = ModelEndpoint("https://text.pollinations.ai/openai", "openai-fast")
+        const val GEMINI_URL = "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions"
+        const val GEMINI_MODELS = "https://generativelanguage.googleapis.com/v1beta/models"
+
+        // The alias follows Google's current Flash model, so retired versions don't break recaps.
+        const val GEMINI_MODEL = "gemini-flash-latest"
+        val KEY_REFUSED_CODES = setOf(400, 401, 403)
         const val PIPELINE_VERSION = 4
         const val TIMEOUT_SECONDS = 120L
         const val MAX_ATTEMPTS = 6

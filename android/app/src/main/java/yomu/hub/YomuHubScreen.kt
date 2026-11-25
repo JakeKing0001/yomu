@@ -18,21 +18,26 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
@@ -56,6 +61,7 @@ import tachiyomi.presentation.core.components.material.Scaffold
 import tachiyomi.presentation.core.i18n.stringResource
 import yomu.offline.OfflineReadyWorker
 import yomu.presentation.glass.groupedCard
+import yomu.reader.RecapClient
 import yomu.reader.YomuIcons
 import yomu.reader.YomuPreferences
 import yomu.search.LibraryRepairWorker
@@ -75,7 +81,34 @@ class YomuHubViewModel(
     private val librarySync: LibrarySync,
     searchPack: SearchPack,
     val updater: YomuUpdater,
+    private val recapClient: RecapClient,
 ) : ViewModel() {
+
+    var isCheckingKey by mutableStateOf(false)
+        private set
+
+    /** An empty key goes back to the free model; one Google refuses isn't kept. */
+    fun saveGeminiKey(key: String, onResult: (StringResource) -> Unit) {
+        val trimmed = key.trim()
+        if (trimmed.isEmpty()) {
+            preferences.geminiKey.set("")
+            onResult(MR.strings.yomu_gemini_removed)
+            return
+        }
+        viewModelScope.launch {
+            isCheckingKey = true
+            val accepted = recapClient.checkGeminiKey(trimmed)
+            isCheckingKey = false
+            if (accepted != false) preferences.geminiKey.set(trimmed)
+            onResult(
+                when (accepted) {
+                    true -> MR.strings.yomu_gemini_saved
+                    false -> MR.strings.yomu_gemini_refused
+                    null -> MR.strings.yomu_gemini_unchecked
+                },
+            )
+        }
+    }
 
     val packStatus = searchPack.status
 
@@ -120,6 +153,8 @@ fun YomuHubScreen() {
     val updateStatus by viewModel.updater.status.collectAsState()
     val replaced by preferences.repairReplaced.changes().collectAsState(preferences.repairReplaced.get())
     val covers by preferences.repairCovers.changes().collectAsState(preferences.repairCovers.get())
+    val geminiKey by preferences.geminiKey.changes().collectAsState(preferences.geminiKey.get())
+    var editingKey by remember { mutableStateOf(false) }
 
     val useSyncFile: (Uri?) -> Unit = useSyncFile@{ uri ->
         if (uri == null) return@useSyncFile
@@ -262,6 +297,11 @@ fun YomuHubScreen() {
             }
 
             HubLink(
+                YomuIcons.Memory,
+                stringResource(MR.strings.yomu_gemini_title),
+                stringResource(if (geminiKey.isBlank()) MR.strings.yomu_gemini_off else MR.strings.yomu_gemini_on),
+            ) { editingKey = true }
+            HubLink(
                 YomuIcons.Studio,
                 stringResource(MR.strings.yomu_repair_title),
                 stringResource(MR.strings.yomu_repair_summary, replaced, covers),
@@ -366,7 +406,63 @@ fun YomuHubScreen() {
             }
         }
     }
+
+    if (editingKey) {
+        GeminiKeyDialog(
+            saved = geminiKey,
+            checking = viewModel.isCheckingKey,
+            onSave = { key ->
+                viewModel.saveGeminiKey(key) { message ->
+                    context.toast(message)
+                    if (message != MR.strings.yomu_gemini_refused) editingKey = false
+                }
+            },
+            onDismiss = { editingKey = false },
+        )
+    }
 }
+
+@Composable
+private fun GeminiKeyDialog(saved: String, checking: Boolean, onSave: (String) -> Unit, onDismiss: () -> Unit) {
+    val context = LocalContext.current
+    var key by remember { mutableStateOf(saved) }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(stringResource(MR.strings.yomu_gemini_title)) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Text(stringResource(MR.strings.yomu_gemini_text))
+                TextButton(
+                    onClick = { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(AI_STUDIO_KEYS))) },
+                ) { Text(stringResource(MR.strings.yomu_gemini_get)) }
+                OutlinedTextField(
+                    value = key,
+                    onValueChange = { key = it },
+                    label = { Text(stringResource(MR.strings.yomu_gemini_title)) },
+                    singleLine = true,
+                    visualTransformation = PasswordVisualTransformation(),
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                if (checking) Text(stringResource(MR.strings.yomu_gemini_checking))
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = { onSave(key) }, enabled = !checking) { Text(stringResource(MR.strings.action_save)) }
+        },
+        dismissButton = {
+            Row {
+                if (saved.isNotEmpty()) {
+                    TextButton(onClick = { onSave("") }, enabled = !checking) {
+                        Text(stringResource(MR.strings.action_remove))
+                    }
+                }
+                TextButton(onClick = onDismiss) { Text(stringResource(MR.strings.action_cancel)) }
+            }
+        },
+    )
+}
+
+private const val AI_STUDIO_KEYS = "https://aistudio.google.com/apikey"
 
 @Composable
 private fun HubLink(

@@ -1099,4 +1099,15 @@
     <string name="yomu_update_failed">Non sono riuscito a controllare gli aggiornamenti. Tocca per riprovare</string>
     <string name="yomu_update_tap">Versione %1$d. Tocca per cercarne una nuova adesso</string>
     <string name="yomu_update_now">Aggiorna ora</string>
+    <string name="yomu_gemini_title">Chiave Gemini</string>
+    <string name="yomu_gemini_off">Facoltativa: con una chiave gratuita di Google, descrizioni e riassunti usano Gemini, che conosce molte più serie</string>
+    <string name="yomu_gemini_on">Collegata: descrizioni e riassunti usano Gemini. Tocca per cambiarla o toglierla</string>
+    <string name="yomu_gemini_text">Crea una chiave gratuita su Google AI Studio con il tuo account Google, copiala e incollala qui. Resta su questo telefono e viene inviata solo a Google.</string>
+    <string name="yomu_gemini_get">Apri Google AI Studio</string>
+    <string name="yomu_gemini_checking">Controllo la chiave con Google…</string>
+    <string name="yomu_gemini_saved">Chiave salvata: Gemini è pronto</string>
+    <string name="yomu_gemini_refused">Google non ha accettato questa chiave, quindi non l\'ho salvata</string>
+    <string name="yomu_gemini_unchecked">Chiave salvata, ma non sono riuscito a raggiungere Google per controllarla</string>
+    <string name="yomu_gemini_removed">Chiave tolta: si torna al modello gratuito</string>
+    <string name="yomu_ai_key_refused">Gemini ha rifiutato la richiesta: controlla la chiave in Funzioni Yomu</string>
 </resources>

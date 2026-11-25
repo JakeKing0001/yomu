@@ -1291,4 +1291,15 @@
     <string name="yomu_update_failed">Couldn\'t check for updates. Tap to try again</string>
     <string name="yomu_update_tap">Version %1$d. Tap to check for a new one now</string>
     <string name="yomu_update_now">Update now</string>
+    <string name="yomu_gemini_title">Gemini key</string>
+    <string name="yomu_gemini_off">Optional: with a free Google key, descriptions and recaps use Gemini, which knows far more series</string>
+    <string name="yomu_gemini_on">Linked: descriptions and recaps use Gemini. Tap to change or remove it</string>
+    <string name="yomu_gemini_text">Create a free key in Google AI Studio with your Google account, copy it and paste it here. It stays on this phone and is only sent to Google.</string>
+    <string name="yomu_gemini_get">Open Google AI Studio</string>
+    <string name="yomu_gemini_checking">Checking the key with Google…</string>
+    <string name="yomu_gemini_saved">Key saved: Gemini is ready</string>
+    <string name="yomu_gemini_refused">Google didn\'t accept this key, so it wasn\'t saved</string>
+    <string name="yomu_gemini_unchecked">Key saved, but Google couldn\'t be reached to check it</string>
+    <string name="yomu_gemini_removed">Key removed: the free model is used again</string>
+    <string name="yomu_ai_key_refused">Gemini refused the request: check the key in Yomu features</string>
 </resources>
