@@ -1,0 +1,533 @@
+package eu.kanade.presentation.components
+
+import androidx.compose.foundation.background
+import androidx.compose.foundation.basicMarquee
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.RowScope
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.WindowInsetsSides
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.only
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.safeDrawing
+import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.text.input.TextFieldLineLimits
+import androidx.compose.foundation.text.input.clearText
+import androidx.compose.foundation.text.input.rememberTextFieldState
+import androidx.compose.foundation.text.input.setTextAndPlaceCursorAtEnd
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.LocalContentColor
+import androidx.compose.material3.LocalTextStyle
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.PlainTooltip
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextFieldDefaults
+import androidx.compose.material3.TooltipAnchorPosition
+import androidx.compose.material3.TooltipBox
+import androidx.compose.material3.TooltipDefaults.rememberTooltipPositionProvider
+import androidx.compose.material3.TopAppBarScrollBehavior
+import androidx.compose.material3.rememberTooltipState
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.derivedStateOf
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusDirection
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.layout.Layout
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Constraints
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import kotlinx.coroutines.flow.drop
+import mihon.icons.materialsymbols.MaterialSymbols
+import mihon.icons.materialsymbols.automirroredrounded.ArrowBack
+import mihon.icons.materialsymbols.rounded.Close
+import mihon.icons.materialsymbols.rounded.MoreVert
+import mihon.icons.materialsymbols.rounded.Search
+import tachiyomi.i18n.MR
+import tachiyomi.presentation.core.i18n.stringResource
+import tachiyomi.presentation.core.util.clearFocusOnSoftKeyboardHide
+import tachiyomi.presentation.core.util.runOnEnterKeyPressed
+import tachiyomi.presentation.core.util.secondaryItemAlpha
+import tachiyomi.presentation.core.util.showSoftKeyboard
+import yomu.presentation.glass.GlassActionGroup
+import yomu.presentation.glass.GlassControlSize
+import yomu.presentation.glass.GlassIconButton
+import yomu.presentation.glass.LocalInGlassHeader
+import yomu.presentation.glass.glassScrollEdge
+import yomu.presentation.glass.liquidGlass
+
+@Composable
+fun AppBar(
+    title: String?,
+
+    modifier: Modifier = Modifier,
+    backgroundColor: Color? = null,
+    // Text
+    subtitle: String? = null,
+    // Up button
+    navigateUp: (() -> Unit)? = null,
+    navigationIcon: ImageVector? = null,
+    // Menu
+    actions: @Composable RowScope.() -> Unit = {},
+    // Action mode
+    actionModeCounter: Int = 0,
+    onCancelActionMode: () -> Unit = {},
+    actionModeActions: @Composable RowScope.() -> Unit = {},
+
+    scrollBehavior: TopAppBarScrollBehavior? = null,
+) {
+    val isActionMode by remember(actionModeCounter) {
+        derivedStateOf { actionModeCounter > 0 }
+    }
+
+    AppBar(
+        modifier = modifier,
+        backgroundColor = backgroundColor,
+        titleContent = {
+            if (isActionMode) {
+                AppBarTitle(actionModeCounter.toString())
+            } else {
+                AppBarTitle(title, subtitle = subtitle)
+            }
+        },
+        navigateUp = navigateUp,
+        navigationIcon = navigationIcon,
+        actions = {
+            if (isActionMode) {
+                actionModeActions()
+            } else {
+                actions()
+            }
+        },
+        isActionMode = isActionMode,
+        onCancelActionMode = onCancelActionMode,
+        scrollBehavior = scrollBehavior,
+    )
+}
+
+@Composable
+fun AppBar(
+    // Title
+    titleContent: @Composable () -> Unit,
+
+    modifier: Modifier = Modifier,
+    backgroundColor: Color? = null,
+    // Up button
+    navigateUp: (() -> Unit)? = null,
+    navigationIcon: ImageVector? = null,
+    // Menu
+    actions: @Composable RowScope.() -> Unit = {},
+    // Action mode
+    isActionMode: Boolean = false,
+    onCancelActionMode: () -> Unit = {},
+
+    scrollBehavior: TopAppBarScrollBehavior? = null,
+    scrollEdgeAlpha: () -> Float = { 1f },
+) {
+    val inHeader = LocalInGlassHeader.current
+    val onBack = if (isActionMode) onCancelActionMode else navigateUp
+    val isRootTitle = onBack == null
+    val titleStyle = if (isRootTitle) {
+        MaterialTheme.typography.headlineLarge.copy(fontSize = 31.sp, lineHeight = 36.sp, fontWeight = FontWeight.Bold)
+    } else {
+        MaterialTheme.typography.titleMedium.copy(fontSize = 17.sp, fontWeight = FontWeight.SemiBold)
+    }
+
+    Layout(
+        modifier = modifier.fillMaxWidth(),
+        content = {
+            Box(
+                when {
+                    inHeader -> Modifier
+                    backgroundColor == null ->
+                        Modifier
+                            .graphicsLayer { alpha = scrollEdgeAlpha() }
+                            .glassScrollEdge()
+                    else -> Modifier.background(backgroundColor)
+                },
+            )
+            Layout(
+                modifier = Modifier
+                    .windowInsetsPadding(
+                        WindowInsets.safeDrawing.only(WindowInsetsSides.Top + WindowInsetsSides.Horizontal),
+                    )
+                    .height(AppBarHeight)
+                    .padding(horizontal = 12.dp),
+                content = {
+                    Box {
+                        onBack?.let {
+                            GlassIconButton(onClick = it) {
+                                if (isActionMode) {
+                                    Icon(
+                                        imageVector = MaterialSymbols.Rounded.Close,
+                                        contentDescription = stringResource(MR.strings.action_cancel),
+                                    )
+                                } else {
+                                    UpIcon(navigationIcon = navigationIcon)
+                                }
+                            }
+                        }
+                    }
+                    Box(contentAlignment = Alignment.CenterStart) {
+                        CompositionLocalProvider(
+                            LocalContentColor provides MaterialTheme.colorScheme.onBackground,
+                            LocalTextStyle provides titleStyle,
+                            content = titleContent,
+                        )
+                    }
+                    GlassActionGroup(content = actions)
+                },
+            ) { measurables, constraints ->
+                val loose = constraints.copy(minWidth = 0, minHeight = 0)
+                val gap = 10.dp.roundToPx()
+                val start = measurables[0].measure(loose)
+                val end = measurables[2].measure(loose)
+                val startEdge = if (start.width > 0) start.width + gap else 4.dp.roundToPx()
+                val endEdge = constraints.maxWidth - if (end.width > 0) end.width + gap else 0
+                val title = measurables[1].measure(loose.copy(maxWidth = (endEdge - startEdge).coerceAtLeast(0)))
+                val centered = (constraints.maxWidth - title.width) / 2
+                val titleX = if (isRootTitle) {
+                    startEdge
+                } else {
+                    centered.coerceIn(startEdge, (endEdge - title.width).coerceAtLeast(startEdge))
+                }
+                layout(constraints.maxWidth, constraints.maxHeight) {
+                    val height = constraints.maxHeight
+                    start.place(0, (height - start.height) / 2)
+                    title.place(titleX, (height - title.height) / 2)
+                    end.place(constraints.maxWidth - end.width, (height - end.height) / 2)
+                }
+            }
+        },
+    ) { measurables, constraints ->
+        val bar = measurables[1].measure(constraints.copy(minHeight = 0))
+        val fadeExtent = if (backgroundColor == null && !inHeader) ScrollEdgeFade.roundToPx() else 0
+        val edge = measurables[0].measure(Constraints.fixed(bar.width, bar.height + fadeExtent))
+        layout(bar.width, bar.height) {
+            edge.place(0, 0)
+            bar.place(0, 0)
+        }
+    }
+}
+
+private val AppBarHeight = 58.dp
+private val ScrollEdgeFade = 14.dp
+
+@Composable
+fun AppBarTitle(
+    title: String?,
+    modifier: Modifier = Modifier,
+    subtitle: String? = null,
+) {
+    Column(modifier = modifier) {
+        title?.let {
+            Text(
+                text = it,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+        subtitle?.let {
+            Text(
+                text = it,
+                style = MaterialTheme.typography.bodyMedium,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.basicMarquee(
+                    repeatDelayMillis = 2_000,
+                ),
+            )
+        }
+    }
+}
+
+@Composable
+fun AppBarActions(
+    actions: List<AppBar.AppBarAction>,
+) {
+    var showMenu by remember { mutableStateOf(false) }
+
+    actions.filterIsInstance<AppBar.Action>().map {
+        TooltipBox(
+            positionProvider = rememberTooltipPositionProvider(TooltipAnchorPosition.Above),
+            tooltip = {
+                PlainTooltip {
+                    Text(it.title)
+                }
+            },
+            state = rememberTooltipState(),
+            focusable = false,
+        ) {
+            IconButton(
+                onClick = it.onClick,
+                enabled = it.enabled,
+            ) {
+                Icon(
+                    imageVector = it.icon,
+                    tint = it.iconTint ?: LocalContentColor.current,
+                    contentDescription = it.title,
+                )
+            }
+        }
+    }
+
+    val overflowActions = actions.filterIsInstance<AppBar.OverflowAction>()
+    if (overflowActions.isNotEmpty()) {
+        TooltipBox(
+            positionProvider = rememberTooltipPositionProvider(TooltipAnchorPosition.Above),
+            tooltip = {
+                PlainTooltip {
+                    Text(stringResource(MR.strings.action_menu_overflow_description))
+                }
+            },
+            state = rememberTooltipState(),
+            focusable = false,
+        ) {
+            IconButton(
+                onClick = { showMenu = !showMenu },
+            ) {
+                Icon(
+                    MaterialSymbols.Rounded.MoreVert,
+                    contentDescription = stringResource(MR.strings.action_menu_overflow_description),
+                )
+            }
+        }
+
+        DropdownMenu(
+            expanded = showMenu,
+            onDismissRequest = { showMenu = false },
+        ) {
+            overflowActions.map {
+                DropdownMenuItem(
+                    onClick = {
+                        it.onClick()
+                        showMenu = false
+                    },
+                    text = { Text(it.title, fontWeight = FontWeight.Normal) },
+                )
+            }
+        }
+    }
+}
+
+/**
+ * @param searchEnabled Set to false if you don't want to show search action.
+ * @param searchQuery If null, use normal toolbar.
+ * @param placeholderText If null, [MR.strings.action_search_hint] is used.
+ */
+@Composable
+fun SearchToolbar(
+    searchQuery: String?,
+    onChangeSearchQuery: (String?) -> Unit,
+    modifier: Modifier = Modifier,
+    titleContent: @Composable () -> Unit = {},
+    navigateUp: (() -> Unit)? = null,
+    searchEnabled: Boolean = true,
+    placeholderText: String? = null,
+    onSearch: (String) -> Unit = {},
+    onClickCloseSearch: () -> Unit = { onChangeSearchQuery(null) },
+    actions: @Composable RowScope.() -> Unit = {},
+    scrollBehavior: TopAppBarScrollBehavior? = null,
+    interactionSource: MutableInteractionSource = remember { MutableInteractionSource() },
+) {
+    val focusRequester = remember { FocusRequester() }
+    val searchFieldState = rememberTextFieldState(searchQuery.orEmpty())
+    val currentOnChangeSearchQuery by rememberUpdatedState(onChangeSearchQuery)
+    val searchOpen by rememberUpdatedState(searchQuery != null)
+
+    LaunchedEffect(searchFieldState) {
+        snapshotFlow { searchFieldState.text.toString() }
+            .drop(1)
+            .collect { if (searchOpen) currentOnChangeSearchQuery(it) }
+    }
+    LaunchedEffect(searchQuery) {
+        when {
+            searchQuery == null -> searchFieldState.clearText()
+            searchQuery != searchFieldState.text.toString() -> {
+                searchFieldState.setTextAndPlaceCursorAtEnd(searchQuery)
+            }
+        }
+    }
+
+    AppBar(
+        modifier = modifier,
+        titleContent = {
+            if (searchQuery == null) return@AppBar titleContent()
+
+            val keyboardController = LocalSoftwareKeyboardController.current
+            val focusManager = LocalFocusManager.current
+
+            val searchAndClearFocus: () -> Unit = f@{
+                val query = searchFieldState.text.toString()
+                if (query.isBlank()) return@f
+                onSearch(query)
+                focusManager.clearFocus()
+                keyboardController?.hide()
+                focusManager.moveFocus(FocusDirection.Next)
+            }
+
+            BasicTextField(
+                state = searchFieldState,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(GlassControlSize)
+                    .liquidGlass()
+                    .focusRequester(focusRequester)
+                    .runOnEnterKeyPressed(action = searchAndClearFocus)
+                    .showSoftKeyboard(remember { searchQuery.isEmpty() })
+                    .clearFocusOnSoftKeyboardHide(),
+                textStyle = MaterialTheme.typography.titleMedium.copy(
+                    color = MaterialTheme.colorScheme.onBackground,
+                    fontWeight = FontWeight.Normal,
+                    fontSize = 16.sp,
+                ),
+                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+                onKeyboardAction = { searchAndClearFocus() },
+                lineLimits = TextFieldLineLimits.SingleLine,
+                cursorBrush = SolidColor(MaterialTheme.colorScheme.onBackground),
+                interactionSource = interactionSource,
+                decorator = TextFieldDefaults.decorator(
+                    state = searchFieldState,
+                    enabled = true,
+                    lineLimits = TextFieldLineLimits.SingleLine,
+                    outputTransformation = null,
+                    interactionSource = interactionSource,
+                    placeholder = {
+                        Text(
+                            modifier = Modifier.secondaryItemAlpha(),
+                            text = (placeholderText ?: stringResource(MR.strings.action_search_hint)),
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            style = MaterialTheme.typography.titleMedium.copy(
+                                fontSize = 16.sp,
+                                fontWeight = FontWeight.Normal,
+                            ),
+                        )
+                    },
+                    container = {},
+                    contentPadding = TextFieldDefaults.contentPaddingWithoutLabel(
+                        start = 16.dp,
+                        end = 12.dp,
+                        top = 0.dp,
+                        bottom = 0.dp,
+                    ),
+                ),
+            )
+        },
+        navigateUp = if (searchQuery == null) navigateUp else onClickCloseSearch,
+        actions = {
+            key("search") {
+                val onClick = { onChangeSearchQuery("") }
+
+                if (!searchEnabled) {
+                    // Don't show search action
+                } else if (searchQuery == null) {
+                    TooltipBox(
+                        positionProvider = rememberTooltipPositionProvider(TooltipAnchorPosition.Above),
+                        tooltip = {
+                            PlainTooltip {
+                                Text(stringResource(MR.strings.action_search))
+                            }
+                        },
+                        state = rememberTooltipState(),
+                        focusable = false,
+                    ) {
+                        IconButton(
+                            onClick = onClick,
+                        ) {
+                            Icon(
+                                MaterialSymbols.Rounded.Search,
+                                contentDescription = stringResource(MR.strings.action_search),
+                            )
+                        }
+                    }
+                } else if (searchQuery.isNotEmpty()) {
+                    TooltipBox(
+                        positionProvider = rememberTooltipPositionProvider(TooltipAnchorPosition.Above),
+                        tooltip = {
+                            PlainTooltip {
+                                Text(stringResource(MR.strings.action_reset))
+                            }
+                        },
+                        state = rememberTooltipState(),
+                        focusable = false,
+                    ) {
+                        IconButton(
+                            onClick = {
+                                searchFieldState.clearText()
+                                onClick()
+                                focusRequester.requestFocus()
+                            },
+                        ) {
+                            Icon(
+                                MaterialSymbols.Rounded.Close,
+                                contentDescription = stringResource(MR.strings.action_reset),
+                            )
+                        }
+                    }
+                }
+            }
+
+            key("actions") { actions() }
+        },
+        isActionMode = false,
+        scrollBehavior = scrollBehavior,
+    )
+}
+
+@Composable
+fun UpIcon(
+    modifier: Modifier = Modifier,
+    navigationIcon: ImageVector? = null,
+) {
+    val icon = navigationIcon
+        ?: MaterialSymbols.AutoMirroredRounded.ArrowBack
+    Icon(
+        imageVector = icon,
+        contentDescription = stringResource(MR.strings.action_bar_up_description),
+        modifier = modifier,
+    )
+}
+
+sealed interface AppBar {
+    sealed interface AppBarAction
+
+    data class Action(
+        val title: String,
+        val icon: ImageVector,
+        val iconTint: Color? = null,
+        val onClick: () -> Unit,
+        val enabled: Boolean = true,
+    ) : AppBarAction
+
+    data class OverflowAction(
+        val title: String,
+        val onClick: () -> Unit,
+    ) : AppBarAction
+}
