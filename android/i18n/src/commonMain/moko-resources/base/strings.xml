@@ -1283,4 +1283,12 @@
     <string name="yomu_missing_search">Tap to look for them</string>
     <string name="yomu_missing_searching">Looking for the missing chapters in other sources and on the web…</string>
     <string name="yomu_missing_none">No other source has the missing chapters yet</string>
+    <string name="yomu_update_checking">Looking for a new version…</string>
+    <string name="yomu_update_latest">Yomu is up to date (version %1$d). Tap to check again</string>
+    <string name="yomu_update_downloading">Downloading the new version: %1$d%%</string>
+    <string name="yomu_update_waiting">Version %1$d is ready: it installs when you leave Yomu, or tap to install it now</string>
+    <string name="yomu_update_installing">Installing… Android may ask you to confirm</string>
+    <string name="yomu_update_failed">Couldn\'t check for updates. Tap to try again</string>
+    <string name="yomu_update_tap">Version %1$d. Tap to check for a new one now</string>
+    <string name="yomu_update_now">Update now</string>
 </resources>

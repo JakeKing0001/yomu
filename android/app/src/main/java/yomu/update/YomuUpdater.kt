@@ -17,6 +17,11 @@ import eu.kanade.tachiyomi.network.GET
 import eu.kanade.tachiyomi.network.NetworkHelper
 import eu.kanade.tachiyomi.network.await
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
@@ -29,6 +34,16 @@ import java.io.File
 
 data class AppRelease(val versionCode: Long, val apkUrl: String, val size: Long)
 
+sealed interface UpdateStatus {
+    data object Idle : UpdateStatus
+    data object Checking : UpdateStatus
+    data object UpToDate : UpdateStatus
+    data class Downloading(val percent: Int) : UpdateStatus
+    data class Ready(val versionCode: Long) : UpdateStatus
+    data object Installing : UpdateStatus
+    data object Failed : UpdateStatus
+}
+
 /**
  * Keeps Yomu up to date from the releases of its GitHub repository, installing quietly while the app is
  * in the background so that an update never closes it during reading.
@@ -39,29 +54,63 @@ class YomuUpdater(private val context: Context, private val network: NetworkHelp
 
     private var watching = false
 
+    // The periodic check and the one at launch can run together, and would delete each other's download.
+    private val lock = Mutex()
+
+    private val _status = MutableStateFlow<UpdateStatus>(UpdateStatus.Idle)
+    val status: StateFlow<UpdateStatus> = _status.asStateFlow()
+
     val installedVersion: Long get() = BuildConfig.VERSION_CODE.toLong()
 
     /** The newest published build, or null when there's none newer than this one. */
     suspend fun newer(): AppRelease? = withContext(Dispatchers.IO) {
+        _status.value = UpdateStatus.Checking
         val text = network.client.newCall(GET(RELEASES, HEADERS)).await().use { response ->
-            if (!response.isSuccessful) return@withContext null
+            check(response.isSuccessful) { "Release list failed with ${response.code}" }
             response.body.string()
         }
-        newestRelease(text, Build.SUPPORTED_ABIS.toList())?.takeIf { it.versionCode > installedVersion }
+        val release = newestRelease(text, Build.SUPPORTED_ABIS.toList())?.takeIf { it.versionCode > installedVersion }
+        if (release == null) _status.value = UpdateStatus.UpToDate
+        release
+    }
+
+    /** The newer build, downloaded, or null when this one is the newest. */
+    suspend fun prepare(): File? = lock.withLock { newer()?.let { download(it) } }
+
+    fun failed() {
+        _status.value = UpdateStatus.Failed
     }
 
     /** The apk on the device; a download that broke off is started again. */
     suspend fun download(release: AppRelease): File = withContext(Dispatchers.IO) {
         val folder = File(context.cacheDir, "yomu_update").apply { mkdirs() }
         val target = File(folder, "yomu-${release.versionCode}.apk")
-        if (target.length() == release.size && release.size > 0) return@withContext target
+        if (target.length() == release.size && release.size > 0) {
+            _status.value = UpdateStatus.Ready(release.versionCode)
+            return@withContext target
+        }
         folder.listFiles()?.forEach(File::delete)
         val partial = File(folder, "download.part")
+        _status.value = UpdateStatus.Downloading(0)
         network.client.newCall(GET(release.apkUrl)).await().use { response ->
             check(response.isSuccessful) { "Update download failed with ${response.code}" }
-            partial.outputStream().use { response.body.byteStream().copyTo(it) }
+            val total = response.body.contentLength().takeIf { it > 0 } ?: release.size
+            partial.outputStream().use { output ->
+                response.body.byteStream().use { input ->
+                    val buffer = ByteArray(DEFAULT_BUFFER_SIZE * 8)
+                    var copied = 0L
+                    while (true) {
+                        val read = input.read(buffer)
+                        if (read < 0) break
+                        output.write(buffer, 0, read)
+                        copied += read
+                        if (total > 0) _status.value = UpdateStatus.Downloading((copied * 100 / total).toInt())
+                    }
+                }
+            }
         }
         check(partial.renameTo(target)) { "Couldn't keep the downloaded update" }
+        _status.value = UpdateStatus.Ready(release.versionCode)
         target
     }
 
@@ -74,6 +123,7 @@ class YomuUpdater(private val context: Context, private val network: NetworkHelp
      * replaced; the first time, or on older Android, the system shows its confirmation instead.
      */
     fun install(apk: File) {
+        _status.value = UpdateStatus.Installing
         val installer = context.packageManager.packageInstaller
         val params = PackageInstaller.SessionParams(PackageInstaller.SessionParams.MODE_FULL_INSTALL).apply {
             setAppPackageName(context.packageName)

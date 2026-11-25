@@ -488,7 +488,7 @@ class MainActivity : BaseActivity() {
             MissingSourcesWorker.runOnce(this@MainActivity)
             if (yomuPreferences.autoUpdate.get()) {
                 UpdateWorker.schedule(this@MainActivity)
-                UpdateWorker.runOnce(this@MainActivity)
+                UpdateWorker.runOnce(this@MainActivity, now = yomuPreferences.updateNeedsConfirm.get())
                 yomuUpdater.watchBackground()
             }
             if (!preferences.shownOnboardingFlow.get() && OnboardingRoute !in navigator.routes) {

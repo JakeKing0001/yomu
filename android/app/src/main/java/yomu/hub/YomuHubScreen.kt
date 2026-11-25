@@ -63,6 +63,7 @@ import yomu.search.SearchPack
 import yomu.search.SearchPackWorker
 import yomu.sync.LibrarySync
 import yomu.sync.LibrarySyncWorker
+import yomu.update.UpdateStatus
 import yomu.update.UpdateWorker
 import yomu.update.YomuUpdater
 
@@ -116,6 +117,7 @@ fun YomuHubScreen() {
     val searchPackOn by preferences.searchPack.changes().collectAsState(preferences.searchPack.get())
     val pack by viewModel.packStatus.collectAsState()
     val autoUpdate by preferences.autoUpdate.changes().collectAsState(preferences.autoUpdate.get())
+    val updateStatus by viewModel.updater.status.collectAsState()
     val replaced by preferences.repairReplaced.changes().collectAsState(preferences.repairReplaced.get())
     val covers by preferences.repairCovers.changes().collectAsState(preferences.repairCovers.get())
 
@@ -277,12 +279,30 @@ fun YomuHubScreen() {
                 stringResource(MR.strings.yomu_update_summary, viewModel.updater.installedVersion),
                 autoUpdate,
                 first = true,
-                last = true,
             ) { enabled ->
                 preferences.autoUpdate.set(enabled)
                 if (enabled) {
                     UpdateWorker.schedule(context)
                     UpdateWorker.runOnce(context)
+                }
+            }
+            val installed = viewModel.updater.installedVersion
+            HubLink(
+                YomuIcons.Swap,
+                stringResource(MR.strings.yomu_update_now),
+                when (val status = updateStatus) {
+                    UpdateStatus.Checking -> stringResource(MR.strings.yomu_update_checking)
+                    UpdateStatus.UpToDate -> stringResource(MR.strings.yomu_update_latest, installed)
+                    is UpdateStatus.Downloading -> stringResource(MR.strings.yomu_update_downloading, status.percent)
+                    is UpdateStatus.Ready -> stringResource(MR.strings.yomu_update_waiting, status.versionCode)
+                    UpdateStatus.Installing -> stringResource(MR.strings.yomu_update_installing)
+                    UpdateStatus.Failed -> stringResource(MR.strings.yomu_update_failed)
+                    UpdateStatus.Idle -> stringResource(MR.strings.yomu_update_tap, installed)
+                },
+                last = true,
+            ) {
+                if (updateStatus !is UpdateStatus.Downloading && updateStatus != UpdateStatus.Checking) {
+                    UpdateWorker.runOnce(context, now = true)
                 }
             }
 

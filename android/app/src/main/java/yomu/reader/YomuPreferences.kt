@@ -82,6 +82,9 @@ class YomuPreferences(preferenceStore: PreferenceStore) {
 
     val autoUpdate: Preference<Boolean> = preferenceStore.getBoolean("yomu_auto_update", true)
 
+    /** Android asked to confirm an update while Yomu was in the background. */
+    val updateNeedsConfirm: Preference<Boolean> = preferenceStore.getBoolean("yomu_update_needs_confirm", false)
+
     val dismissedManga: Preference<Set<String>> = preferenceStore.getStringSet(
         Preference.appStateKey("yomu_dismissed_manga"),
         emptySet(),
