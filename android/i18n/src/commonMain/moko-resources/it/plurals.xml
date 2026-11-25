@@ -114,4 +114,8 @@
         <item quantity="one">%1$d capitolo aggiunto da altre fonti</item>
         <item quantity="other">%1$d capitoli aggiunti da altre fonti</item>
     </plurals>
+    <plurals name="yomu_sources_replaced">
+        <item quantity="one">%1$d fonte sostituita</item>
+        <item quantity="other">%1$d fonti sostituite</item>
+    </plurals>
 </resources>

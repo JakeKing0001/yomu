@@ -20,7 +20,6 @@ import kotlinx.coroutines.withTimeoutOrNull
 import logcat.LogPriority
 import mihon.app.di.AppGraph
 import mihon.core.metro.metroGraph
-import mihon.domain.migration.usecases.MigrateMangaUseCase
 import mihon.domain.source.interactor.UpdateMangaFromRemote
 import tachiyomi.core.common.util.system.logcat
 import tachiyomi.domain.manga.interactor.GetFavorites
@@ -46,11 +45,7 @@ class LibraryRepairWorker(context: Context, params: WorkerParameters) : Coroutin
 
     @Inject lateinit var sourceManager: SourceManager
 
-    @Inject lateinit var smartSearch: SmartSearch
-
-    @Inject lateinit var searchPack: SearchPack
-
-    @Inject lateinit var migrateManga: MigrateMangaUseCase
+    @Inject lateinit var sourceReplacer: SourceReplacer
 
     @Inject lateinit var updateMangaFromRemote: UpdateMangaFromRemote
 
@@ -78,7 +73,7 @@ class LibraryRepairWorker(context: Context, params: WorkerParameters) : Coroutin
             if (manga.source == LocalSource.ID || "${manga.id}" in tried) continue
             try {
                 if (sourceManager.get(manga.source) == null) {
-                    replaceSource(manga)
+                    sourceReplacer.replace(manga)
                 } else {
                     repairCover(manga)
                 }
@@ -94,16 +89,6 @@ class LibraryRepairWorker(context: Context, params: WorkerParameters) : Coroutin
         // A worker may only run for minutes, so a large library is repaired over several runs.
         if (unfinished) runOnce(applicationContext, ExistingWorkPolicy.APPEND_OR_REPLACE)
         return Result.success()
-    }
-
-    private suspend fun replaceSource(manga: Manga) {
-        // Wait for the extension installer first: the source may simply not be installed yet.
-        if (searchPack.owner(manga.source) != null && searchPack.install(manga.source) != null) return
-        val hit = withTimeoutOrNull(SEARCH_BUDGET) { smartSearch.firstMatch(manga.title) } ?: return
-        val target = hit.manga.first()
-        if (sourceManager.get(target.source) == null && searchPack.install(target.source) == null) return
-        migrateManga(manga, getManga.await(target.id) ?: target, replace = true)
-        preferences.repairReplaced.set(preferences.repairReplaced.get() + 1)
     }
 
     private suspend fun repairCover(manga: Manga) {
@@ -150,7 +135,6 @@ class LibraryRepairWorker(context: Context, params: WorkerParameters) : Coroutin
     companion object {
         private const val NAME = "YomuLibraryRepair"
         private val RUN_BUDGET = 8.minutes
-        private val SEARCH_BUDGET = 3.minutes
         private val COVER_TIMEOUT = 15.seconds
 
         fun runOnce(context: Context, policy: ExistingWorkPolicy = ExistingWorkPolicy.KEEP) {

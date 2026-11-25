@@ -5,6 +5,7 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.systemBarsPadding
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -63,6 +64,8 @@ import tachiyomi.core.common.util.system.logcat
 import tachiyomi.domain.chapter.model.Chapter
 import tachiyomi.domain.manga.model.Manga
 import tachiyomi.presentation.core.screens.LoadingScreen
+import yomu.chapters.LocalMissingChaptersSearch
+import yomu.chapters.MissingChaptersSearch
 
 @Composable
 fun MangaScreen(
@@ -102,77 +105,82 @@ fun MangaScreen(
         }
     }
 
-    MangaScreen(
-        state = successState,
-        snackbarHostState = viewModel.snackbarHostState,
-        nextUpdate = successState.manga.expectedNextUpdate,
-        isTabletUi = isTabletUi(),
-        chapterSwipeStartAction = viewModel.chapterSwipeStartAction,
-        chapterSwipeEndAction = viewModel.chapterSwipeEndAction,
-        navigateUp = navigator::pop,
-        onChapterClicked = { openChapter(context, it) },
-        onDownloadChapter = viewModel::runChapterDownloadActions.takeIf { !successState.source.isLocalOrStub() },
-        downloadProgressProvider = viewModel::getDownloadProgress,
-        onAddToLibraryClicked = {
-            if (successState.manga.favorite) {
-                viewModel.showRemoveFromLibraryDialog()
-            } else {
-                viewModel.toggleFavorite()
-            }
-            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-        },
-        onWebViewClicked = {
-            openMangaInWebView(
-                navigator,
-                viewModel.manga,
-                viewModel.source,
-            )
-        }.takeIf { isHttpSource },
-        onWebViewLongClicked = {
-            copyMangaUrl(
-                context,
-                viewModel.manga,
-                viewModel.source,
-            )
-        }.takeIf { isHttpSource },
-        onTrackingClicked = {
-            if (!successState.hasLoggedInTrackers) {
-                navigator.openSettings(SettingsTrackingScreen, isTabletUi)
-            } else {
-                navigator.push(
-                    TrackInfoDialogRoute(
-                        mangaId = successState.manga.id,
-                        mangaTitle = successState.manga.title,
-                        sourceId = successState.source.id,
-                    ),
+    val fillingChapters by viewModel.fillingChapters.collectAsStateWithLifecycle()
+    CompositionLocalProvider(
+        LocalMissingChaptersSearch provides MissingChaptersSearch(fillingChapters, viewModel::searchMissingChapters),
+    ) {
+        MangaScreen(
+            state = successState,
+            snackbarHostState = viewModel.snackbarHostState,
+            nextUpdate = successState.manga.expectedNextUpdate,
+            isTabletUi = isTabletUi(),
+            chapterSwipeStartAction = viewModel.chapterSwipeStartAction,
+            chapterSwipeEndAction = viewModel.chapterSwipeEndAction,
+            navigateUp = navigator::pop,
+            onChapterClicked = { openChapter(context, it) },
+            onDownloadChapter = viewModel::runChapterDownloadActions.takeIf { !successState.source.isLocalOrStub() },
+            downloadProgressProvider = viewModel::getDownloadProgress,
+            onAddToLibraryClicked = {
+                if (successState.manga.favorite) {
+                    viewModel.showRemoveFromLibraryDialog()
+                } else {
+                    viewModel.toggleFavorite()
+                }
+                haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+            },
+            onWebViewClicked = {
+                openMangaInWebView(
+                    navigator,
+                    viewModel.manga,
+                    viewModel.source,
                 )
-            }
-        },
-        onTagSearch = { performGenreSearch(navigator, resultEventBus, it, viewModel.source!!) },
-        onFilterButtonClicked = viewModel::showSettingsDialog,
-        onRefresh = viewModel::fetchAllFromSource,
-        onContinueReading = { continueReading(context, viewModel.getNextUnreadChapter()) },
-        onSearch = { query, global -> performSearch(navigator, resultEventBus, query, global) },
-        onCoverClicked = viewModel::showCoverDialog,
-        onShareClicked = { shareManga(context, viewModel.manga, viewModel.source) }.takeIf { isHttpSource },
-        onDownloadActionClicked = viewModel::runDownloadAction.takeIf { !successState.source.isLocalOrStub() },
-        onEditCategoryClicked = viewModel::showChangeCategoryDialog.takeIf { successState.manga.favorite },
-        onEditFetchIntervalClicked = viewModel::showSetFetchIntervalDialog.takeIf {
-            successState.manga.favorite
-        },
-        onMigrateClicked = {
-            navigator.push(MigrationConfigRoute(successState.manga.id))
-        }.takeIf { successState.manga.favorite },
-        onEditNotesClicked = { navigator.push(MangaNotesRoute(mangaId = successState.manga.id)) },
-        onMultiBookmarkClicked = viewModel::bookmarkChapters,
-        onMultiMarkAsReadClicked = viewModel::markChaptersRead,
-        onMarkPreviousAsReadClicked = viewModel::markPreviousChapterRead,
-        onMultiDeleteClicked = viewModel::showDeleteChapterDialog,
-        onChapterSwipe = viewModel::chapterSwipe,
-        onChapterSelected = viewModel::toggleSelection,
-        onAllChapterSelected = viewModel::toggleAllSelection,
-        onInvertSelection = viewModel::invertSelection,
-    )
+            }.takeIf { isHttpSource },
+            onWebViewLongClicked = {
+                copyMangaUrl(
+                    context,
+                    viewModel.manga,
+                    viewModel.source,
+                )
+            }.takeIf { isHttpSource },
+            onTrackingClicked = {
+                if (!successState.hasLoggedInTrackers) {
+                    navigator.openSettings(SettingsTrackingScreen, isTabletUi)
+                } else {
+                    navigator.push(
+                        TrackInfoDialogRoute(
+                            mangaId = successState.manga.id,
+                            mangaTitle = successState.manga.title,
+                            sourceId = successState.source.id,
+                        ),
+                    )
+                }
+            },
+            onTagSearch = { performGenreSearch(navigator, resultEventBus, it, viewModel.source!!) },
+            onFilterButtonClicked = viewModel::showSettingsDialog,
+            onRefresh = viewModel::fetchAllFromSource,
+            onContinueReading = { continueReading(context, viewModel.getNextUnreadChapter()) },
+            onSearch = { query, global -> performSearch(navigator, resultEventBus, query, global) },
+            onCoverClicked = viewModel::showCoverDialog,
+            onShareClicked = { shareManga(context, viewModel.manga, viewModel.source) }.takeIf { isHttpSource },
+            onDownloadActionClicked = viewModel::runDownloadAction.takeIf { !successState.source.isLocalOrStub() },
+            onEditCategoryClicked = viewModel::showChangeCategoryDialog.takeIf { successState.manga.favorite },
+            onEditFetchIntervalClicked = viewModel::showSetFetchIntervalDialog.takeIf {
+                successState.manga.favorite
+            },
+            onMigrateClicked = {
+                navigator.push(MigrationConfigRoute(successState.manga.id))
+            }.takeIf { successState.manga.favorite },
+            onEditNotesClicked = { navigator.push(MangaNotesRoute(mangaId = successState.manga.id)) },
+            onMultiBookmarkClicked = viewModel::bookmarkChapters,
+            onMultiMarkAsReadClicked = viewModel::markChaptersRead,
+            onMarkPreviousAsReadClicked = viewModel::markPreviousChapterRead,
+            onMultiDeleteClicked = viewModel::showDeleteChapterDialog,
+            onChapterSwipe = viewModel::chapterSwipe,
+            onChapterSelected = viewModel::toggleSelection,
+            onAllChapterSelected = viewModel::toggleAllSelection,
+            onInvertSelection = viewModel::invertSelection,
+        )
+    }
 
     var showScanlatorsDialog by remember { mutableStateOf(false) }
 

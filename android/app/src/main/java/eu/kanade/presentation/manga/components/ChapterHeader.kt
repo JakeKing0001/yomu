@@ -18,6 +18,7 @@ import tachiyomi.presentation.core.components.material.SECONDARY_ALPHA
 import tachiyomi.presentation.core.components.material.padding
 import tachiyomi.presentation.core.i18n.pluralStringResource
 import tachiyomi.presentation.core.i18n.stringResource
+import yomu.chapters.LocalMissingChaptersSearch
 
 @Composable
 fun ChapterHeader(
@@ -60,15 +61,39 @@ fun ChapterHeader(
 
 @Composable
 private fun MissingChaptersWarning(count: Int) {
+    val search = LocalMissingChaptersSearch.current
+    if (search?.searching == true) {
+        Text(
+            text = stringResource(MR.strings.yomu_missing_searching),
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.primary,
+        )
+        return
+    }
     if (count == 0) {
         return
     }
 
-    Text(
-        text = pluralStringResource(MR.plurals.missing_chapters, count = count, count),
-        maxLines = 1,
-        overflow = TextOverflow.Ellipsis,
-        style = MaterialTheme.typography.bodySmall,
-        color = MaterialTheme.colorScheme.error.copy(alpha = SECONDARY_ALPHA),
-    )
+    Row(
+        modifier = if (search != null) Modifier.clickable(onClick = search.onSearch) else Modifier,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            text = pluralStringResource(MR.plurals.missing_chapters, count = count, count),
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.error.copy(alpha = SECONDARY_ALPHA),
+        )
+        if (search != null) {
+            Text(
+                text = " · " + stringResource(MR.strings.yomu_missing_search),
+                maxLines = 1,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.primary,
+            )
+        }
+    }
 }

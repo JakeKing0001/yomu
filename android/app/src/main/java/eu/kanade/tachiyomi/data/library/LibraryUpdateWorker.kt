@@ -70,6 +70,7 @@ import tachiyomi.domain.manga.model.Manga
 import tachiyomi.domain.source.model.SourceNotInstalledException
 import tachiyomi.domain.source.service.SourceManager
 import tachiyomi.i18n.MR
+import yomu.chapters.LibraryCompleteWorker
 import java.io.File
 import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.TimeUnit
@@ -105,6 +106,9 @@ class LibraryUpdateWorker(private val context: Context, workerParams: WorkerPara
     @Inject private lateinit var notifier: LibraryUpdateNotifier
 
     private var mangaToUpdate: List<LibraryManga> = mutableListOf()
+
+    /** Every series of the updated categories, also those skipped, so their sources get checked too. */
+    private var categoryManga: List<LibraryManga> = emptyList()
 
     override suspend fun doWork(): Result {
         graph.inject(this)
@@ -181,6 +185,7 @@ class LibraryUpdateWorker(private val context: Context, workerParams: WorkerPara
             }
         }
 
+        categoryManga = listToUpdate
         val restrictions = libraryPreferences.autoUpdateMangaRestrictions.get()
         val skippedUpdates = mutableListOf<Pair<Manga, String?>>()
         val timeZone = TimeZone.currentSystemDefault()
@@ -320,6 +325,14 @@ class LibraryUpdateWorker(private val context: Context, workerParams: WorkerPara
         }
 
         notifier.cancelProgressNotification()
+
+        LibraryCompleteWorker.start(
+            context,
+            ids = categoryManga.map { it.manga.id },
+            gone = failedUpdates.filter { (manga, error) ->
+                LibraryCompleteWorker.isGone(error) || sourceManager.get(manga.source) == null
+            }.map { (manga, _) -> manga.id },
+        )
 
         if (newUpdates.isNotEmpty()) {
             notifier.showUpdateNotifications(newUpdates)

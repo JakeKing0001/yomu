@@ -1279,4 +1279,8 @@
     <string name="yomu_web_series_title">Found on the web</string>
     <string name="yomu_web_series_text">I found the first chapters of «%1$s» on %2$d sites. Shall I put the whole series together from them? Missing chapters are looked up one by one, so it can take a minute.</string>
     <string name="yomu_web_series_yes">Yes, make it</string>
+    <string name="yomu_library_completed">Library completed</string>
+    <string name="yomu_missing_search">Tap to look for them</string>
+    <string name="yomu_missing_searching">Looking for the missing chapters in other sources and on the web…</string>
+    <string name="yomu_missing_none">No other source has the missing chapters yet</string>
 </resources>

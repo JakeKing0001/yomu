@@ -118,4 +118,8 @@
         <item quantity="one">%1$d chapter added from other sources</item>
         <item quantity="other">%1$d chapters added from other sources</item>
     </plurals>
+    <plurals name="yomu_sources_replaced">
+        <item quantity="one">%1$d source replaced</item>
+        <item quantity="other">%1$d sources replaced</item>
+    </plurals>
 </resources>

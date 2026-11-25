@@ -67,6 +67,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOn
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.flow.onStart
 import kotlinx.coroutines.flow.stateIn
@@ -345,14 +346,25 @@ class MangaViewModel(
         }
     }
 
+    /** Whether the missing chapters of this series are being looked for. */
+    val fillingChapters: StateFlow<Boolean> = chapterFiller.filling.map { mangaId in it }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, false)
+
+    /** Looks for the missing chapters now, even if it did a short while ago. */
+    fun searchMissingChapters() {
+        fillMissingChapters(manga ?: return, force = true)
+    }
+
     /** Gaps, newer chapters and series without any are completed from other sources, the web included. */
-    private fun fillMissingChapters(manga: Manga) {
+    private fun fillMissingChapters(manga: Manga, force: Boolean = false) {
         viewModelScope.launch {
-            val added = chapterFiller.fill(manga)
+            val added = chapterFiller.fill(manga, force)
             if (added > 0) {
                 snackbarHostState.showSnackbar(
                     message = context.pluralStringResource(MR.plurals.yomu_chapters_borrowed, added, added),
                 )
+            } else if (force) {
+                snackbarHostState.showSnackbar(message = context.stringResource(MR.strings.yomu_missing_none))
             }
         }
     }

@@ -33,6 +33,13 @@ object BorrowedChapter {
         return wholes.size - wholes.toSet().size <= wholes.size / MAX_REPEATED_SHARE
     }
 
+    /** How many whole numbers between the first chapter and the newest one the series lacks. */
+    fun gaps(have: Collection<Double>): Int {
+        val covered = have.filter { it >= 0 }.mapTo(HashSet()) { floor(it) }
+        val newest = covered.maxOrNull() ?: return 0
+        return (1..newest.toInt()).count { it.toDouble() !in covered }
+    }
+
     /**
      * The chapters worth borrowing: those whose whole number the series doesn't have yet, one per number.
      * Comparing whole numbers keeps a 12.5 from another source from doubling a 12 already there.

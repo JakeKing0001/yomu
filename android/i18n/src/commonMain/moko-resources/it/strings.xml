@@ -1087,4 +1087,8 @@
     <string name="yomu_web_series_title">Trovato sul web</string>
     <string name="yomu_web_series_text">Ho trovato i primi capitoli di «%1$s» su %2$d siti. Vuoi che ne faccia la serie intera? I capitoli mancanti li cerco uno per uno, quindi può volerci un minuto.</string>
     <string name="yomu_web_series_yes">Sì, creala</string>
+    <string name="yomu_library_completed">Libreria completata</string>
+    <string name="yomu_missing_search">Tocca per cercarli</string>
+    <string name="yomu_missing_searching">Cerco i capitoli mancanti nelle altre fonti e sul web…</string>
+    <string name="yomu_missing_none">Nessun\'altra fonte ha ancora i capitoli mancanti</string>
 </resources>

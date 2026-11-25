@@ -55,6 +55,7 @@ import tachiyomi.domain.manga.interactor.ResetViewerFlags
 import tachiyomi.domain.source.service.SourceManager
 import tachiyomi.domain.storage.service.StoragePreferences
 import tachiyomi.domain.track.interactor.UpsertTrack
+import yomu.chapters.LibraryCompleteWorker
 import yomu.offline.OfflineReadyWorker
 import yomu.panels.PanelCollection
 import yomu.reader.YomuPreferences
@@ -87,6 +88,7 @@ interface AppGraph : ViewModelGraph {
     fun inject(searchPackWorker: SearchPackWorker)
     fun inject(missingSourcesWorker: MissingSourcesWorker)
     fun inject(libraryRepairWorker: LibraryRepairWorker)
+    fun inject(libraryCompleteWorker: LibraryCompleteWorker)
     fun inject(updateWorker: UpdateWorker)
     fun inject(notificationReceiver: NotificationReceiver)
     fun inject(notificationReceiver: SecureActivityDelegateImpl)

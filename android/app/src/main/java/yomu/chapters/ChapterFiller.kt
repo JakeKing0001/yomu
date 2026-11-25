@@ -6,8 +6,19 @@ import dev.zacsweers.metro.SingleIn
 import eu.kanade.domain.chapter.model.copyFromSChapter
 import eu.kanade.domain.manga.model.toSManga
 import eu.kanade.tachiyomi.source.CatalogueSource
+import eu.kanade.tachiyomi.source.model.FilterList
+import eu.kanade.tachiyomi.source.model.SManga
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import logcat.LogPriority
@@ -20,7 +31,7 @@ import tachiyomi.domain.source.service.SourceManager
 import yomu.reader.YomuPreferences
 import yomu.search.SearchPack
 import yomu.search.SmartSearch
-import java.util.concurrent.ConcurrentHashMap
+import yomu.web.WebSource
 import kotlin.time.Clock
 import kotlin.time.Duration.Companion.hours
 import kotlin.time.Duration.Companion.minutes
@@ -28,7 +39,8 @@ import kotlin.time.Duration.Companion.seconds
 
 /**
  * Completes a series with chapters from other sources: the gaps in its numbering, newer chapters its
- * source doesn't have yet, or every chapter when its source lists none.
+ * source doesn't have yet, or every chapter when its source lists none. Sources with more chapters lend
+ * first, and the web is tried for what none of them has.
  */
 @Inject
 @SingleIn(AppScope::class)
@@ -37,16 +49,21 @@ class ChapterFiller(
     private val searchPack: SearchPack,
     private val sourceManager: SourceManager,
     private val chapterRepository: ChapterRepository,
+    private val webSource: WebSource,
     private val preferences: YomuPreferences,
 ) {
 
-    private val running = ConcurrentHashMap.newKeySet<Long>()
+    private val _filling = MutableStateFlow(emptySet<Long>())
 
-    /** How many chapters were added; it looks again for a series only after a while. */
-    suspend fun fill(manga: Manga): Int = withContext(Dispatchers.IO) {
-        if (manga.source == 0L || !running.add(manga.id)) return@withContext 0
+    /** The series being completed right now. */
+    val filling: StateFlow<Set<Long>> = _filling.asStateFlow()
+
+    /** How many chapters were added. Unless [force]d, it looks again for a series only after a while. */
+    suspend fun fill(manga: Manga, force: Boolean = false): Int = withContext(Dispatchers.IO) {
+        if (manga.source == 0L || manga.id in _filling.value) return@withContext 0
+        _filling.update { it + manga.id }
         try {
-            if (!isDue(manga.id)) return@withContext 0
+            if (!force && !isDue(manga.id)) return@withContext 0
             markTried(manga.id)
             withTimeoutOrNull(BUDGET) { borrow(manga) } ?: 0
         } catch (e: CancellationException) {
@@ -55,9 +72,11 @@ class ChapterFiller(
             logcat(LogPriority.WARN, e) { "Couldn't complete the chapters of ${manga.title}" }
             0
         } finally {
-            running.remove(manga.id)
+            _filling.update { it - manga.id }
         }
     }
+
+    private class Lender(val source: CatalogueSource, val chapters: List<Pair<Double, Chapter>>)
 
     private suspend fun borrow(manga: Manga): Int {
         val existing = chapterRepository.getChapterByMangaId(manga.id)
@@ -65,20 +84,14 @@ class ChapterFiller(
         val added = ArrayList<Chapter>()
         val now = Clock.System.now()
 
-        for (hit in smartSearch.allMatches(manga.title).filter { it.source.id != manga.source }.take(MAX_SOURCES)) {
-            val offered = chaptersOf(hit.source, hit.manga.first()) ?: continue
-            if (!BorrowedChapter.isNumberedLikeTheSeries(offered.map { it.first })) continue
-            val missing = BorrowedChapter.missing(have, offered)
-            if (missing.isEmpty()) continue
-            // Reading needs the source installed, not just loaded for searching.
-            if (sourceManager.get(hit.source.id) == null && searchPack.install(hit.source.id) == null) continue
-            missing.forEach { (number, chapter) ->
+        val take: (Lender) -> Unit = { lender ->
+            BorrowedChapter.missing(have, lender.chapters).forEach { (number, chapter) ->
                 have += number
                 added += chapter.copy(
                     id = -1,
                     mangaId = manga.id,
-                    url = BorrowedChapter.url(hit.source.id, chapter.url),
-                    scanlator = hit.source.name,
+                    url = BorrowedChapter.url(lender.source.id, chapter.url),
+                    scanlator = lender.source.name,
                     chapterNumber = number,
                     read = false,
                     bookmark = false,
@@ -86,6 +99,23 @@ class ChapterFiller(
                     dateFetch = now,
                 )
             }
+        }
+
+        // Italian sources first, then those with most chapters, so a series is mostly read from one place.
+        lenders(manga)
+            .sortedWith(
+                compareByDescending<Lender> { it.source.lang == ITALIAN }
+                    .thenByDescending { it.chapters.distinctBy { (number, _) -> number }.size },
+            )
+            .forEach { lender ->
+                if (BorrowedChapter.missing(have, lender.chapters).isEmpty()) return@forEach
+                // Reading needs the source installed, not just loaded for searching.
+                if (sourceManager.get(lender.source.id) != null || searchPack.install(lender.source.id) != null) {
+                    take(lender)
+                }
+            }
+        if (manga.source != WebSource.ID && (have.isEmpty() || BorrowedChapter.gaps(have) > 0)) {
+            fromWeb(manga.title)?.let(take)
         }
         if (added.isEmpty()) return 0
 
@@ -95,13 +125,50 @@ class ChapterFiller(
         return ordered.size
     }
 
-    private suspend fun chaptersOf(source: CatalogueSource, found: Manga): List<Pair<Double, Chapter>>? {
+    private suspend fun lenders(manga: Manga): List<Lender> = coroutineScope {
+        val gate = Semaphore(PARALLEL_SOURCES)
+        smartSearch.allMatches(manga.title)
+            .filter { it.source.id != manga.source && it.source.id != WebSource.ID }
+            .take(MAX_SOURCES)
+            .map { hit ->
+                async {
+                    gate.withPermit {
+                        val found = hit.manga.first()
+                        chaptersOf(hit.source, found.toSManga(), found.title)
+                            ?.takeIf { offered -> BorrowedChapter.isNumberedLikeTheSeries(offered.map { it.first }) }
+                            ?.let { Lender(hit.source, it) }
+                    }
+                }
+            }
+            .awaitAll()
+            .filterNotNull()
+    }
+
+    private suspend fun fromWeb(title: String): Lender? {
+        val series = try {
+            webSource.getSearchManga(1, title, FilterList()).mangas
+                .firstOrNull { WebSource.WebSeries.parse(it.url) != null }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            logcat(LogPriority.DEBUG, e) { "Nothing on the web for $title" }
+            null
+        } ?: return null
+        return chaptersOf(webSource, series, title)?.let { Lender(webSource, it) }
+    }
+
+    private suspend fun chaptersOf(
+        source: CatalogueSource,
+        found: SManga,
+        title: String,
+    ): List<Pair<Double, Chapter>>? {
         return try {
-            val listed = withTimeoutOrNull(SOURCE_TIMEOUT) {
-                source.getMangaUpdate(found.toSManga(), emptyList(), fetchDetails = true, fetchChapters = true).chapters
+            val timeout = if (source is WebSource) WEB_TIMEOUT else SOURCE_TIMEOUT
+            val listed = withTimeoutOrNull(timeout) {
+                source.getMangaUpdate(found, emptyList(), fetchDetails = true, fetchChapters = true).chapters
             } ?: return null
             val chapters = listed.map { Chapter.create().copyFromSChapter(it) }
-            ChapterRecognition.parseChapterNumbers(found.title, chapters).zip(chapters)
+            ChapterRecognition.parseChapterNumbers(title, chapters).zip(chapters)
                 .mapNotNull { (numbering, chapter) ->
                     numbering.chapter?.let(ChapterRecognition::toDouble)?.let { it to chapter }
                 }
@@ -128,9 +195,12 @@ class ChapterFiller(
     }
 
     private companion object {
+        const val ITALIAN = "it"
         const val MAX_SOURCES = 6
+        const val PARALLEL_SOURCES = 3
         val RETRY_AFTER = 12.hours
-        val BUDGET = 4.minutes
+        val BUDGET = 5.minutes
         val SOURCE_TIMEOUT = 20.seconds
+        val WEB_TIMEOUT = 2.minutes
     }
 }

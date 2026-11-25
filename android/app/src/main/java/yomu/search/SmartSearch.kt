@@ -64,6 +64,13 @@ class SmartSearch(
         return state.hits.firstOrNull(SearchHit::isStrong)
     }
 
+    /** The sources with the series in Italian, or in other languages when no Italian one has it. */
+    suspend fun nearestMatches(query: String): List<SearchHit> {
+        var state = SmartSearchState()
+        run(query, everywhere = false) { change -> state = change(state) }
+        return state.hits.filter(SearchHit::isStrong)
+    }
+
     /** Every source found with the series and its chapters, in the order a reader would want them. */
     suspend fun allMatches(query: String): List<SearchHit> {
         var state = SmartSearchState()
